@@ -19,6 +19,7 @@ function DataSet:__init(loader, options)
   options = options or {}
 
   self.examplesFilename = "data/examples.t7"
+  self.dataDir = options.dataDir
 
   -- Discard words with lower frequency then this
   self.minWordFreq = options.minWordFreq or 1
@@ -79,6 +80,7 @@ function DataSet:visit(conversations)
   print("-- Pre-processing data")
 
   local total = self.loadFirst or #conversations * 2
+  -- print("total :"..total.." wanted :"..self.loadFirst)
 
   for i, conversation in ipairs(conversations) do
     if i > total then break end
@@ -133,18 +135,40 @@ function DataSet:batches(size)
     end
 
     local examples = {}
-
+    local maxInputLen = 0
+    local maxOutputLen = 0
     for i = 1, size do
       local example = file:readObject()
       if example == nil then
         done = true
         file:close()
-        return examples
+        -- return examples
+        break
+      end
+      local input, target = unpack(example)
+      if input:size(1) > maxInputLen then
+          maxInputLen = input:size(1)
+      end
+      if target:size(1) > maxOutputLen then
+          maxOutputLen = target:size(1)
       end
       table.insert(examples, example)
     end
-
-    return examples
+    local sampleNum = #examples
+    local encoderInput = torch.IntTensor(sampleNum,maxInputLen):zero()
+    local decoderInput = torch.IntTensor(sampleNum,maxOutputLen-1):zero()
+    local decoderTarget = torch.IntTensor(sampleNum,maxOutputLen-1):zero()
+    for idx, example in ipairs(examples) do
+        local input, target = unpack(example)
+        encoderInput:sub(idx,idx,-input:size(1),-1):copy(input)
+        -- print(decoderInput:size())
+        -- print(target)
+        decoderInput:sub(idx,idx,1,target:size(1)-1):copy(target:sub(1,-2))
+        decoderTarget:sub(idx,idx,1,target:size(1)-1):copy(target:sub(2,-1))
+    end
+    -- print(encoderInput)
+    -- print(decoderInput)
+    return {encoderInput,decoderInput,decoderTarget}
   end
 end
 
@@ -198,7 +222,7 @@ function DataSet:visitText(text, additionalTokens)
   if text == "" then
     return
   end
-
+  
   for t, word in tokenizer.tokenize(text) do
     table.insert(words, self:makeWordId(word))
     -- Only keep the first sentence

@@ -8,11 +8,12 @@ if dataset == nil then
   cmd:text('Options:')
   cmd:option('--cuda', false, 'use CUDA. Training must be done on CUDA')
   cmd:option('--debug', false, 'show debug info')
+  cmd:option('--dataDir', 'data', 'show debug info')
   cmd:text()
   options = cmd:parse(arg)
 
   -- Data
-  dataset = neuralconvo.DataSet()
+  dataset = neuralconvo.NetEaseData(options)
 
   -- Enabled CUDA
   if options.cuda then
@@ -23,7 +24,7 @@ end
 
 if model == nil then
   print("-- Loading model")
-  model = torch.load("data/model.t7")
+  model = torch.load(options.dataDir.."/model.t7")
 end
 
 -- Word IDs to sentence
@@ -57,14 +58,19 @@ end
 function say(text)
   local wordIds = {}
 
-  for t, word in tokenizer.tokenize(text) do
-    local id = dataset.word2id[word:lower()] or dataset.unknownToken
+  local values = stringx.split(text, " ")
+  for _,word in ipairs(values) do
+    print("w : = "..word)
+    local id = dataset.word2id[word] or dataset.unknownToken
+    print("id : = "..id)
     table.insert(wordIds, id)
   end
 
   local input = torch.Tensor(list.reverse(wordIds))
+  print(input)
   local wordIds, probabilities = model:eval(input)
 
+  print(wordIds,probabilities)
   print(">> " .. pred2sent(wordIds))
 
   if options.debug then
