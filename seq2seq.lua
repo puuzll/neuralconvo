@@ -53,7 +53,8 @@ function Seq2Seq:buildModel()
   self.decoder:zeroGradParameters()
 
   self.zeroTensor = torch.Tensor(2):zero()
-  self.criterion = nn.MaskZeroCriterion(nn.ClassNLLCriterion(),1)
+  -- self.criterion = nn.MaskZeroCriterion(nn.CrossEntropyCriterion(),1)
+  self.criterion = nn.SequencerCriterion(nn.MaskZeroCriterion(nn.ClassNLLCriterion(),1))
   print('encoder:')
   for i,module in ipairs(self.encoder:listModules()) do
     print(module)
@@ -66,17 +67,19 @@ function Seq2Seq:buildModel()
   end
   self.encoder:training()
   self.decoder:training()
+  self.splitTable = nn.SplitTable(2)
 end
 
 function Seq2Seq:cuda()
-  self.encoder:cuda()
-  self.decoder:cuda()
+  self.encoder = self.encoder:cuda()
+  self.decoder = self.decoder:cuda()
 
   if self.criterion then
-    self.criterion:cuda()
+    self.criterion = self.criterion:cuda()
   end
 
   self.zeroTensor = self.zeroTensor:cuda()
+  self.splitTable = self.splitTable:cuda()
 end
 
 --[[ Forward coupling: Copy encoder cell and output to decoder LSTM ]]--
@@ -113,7 +116,7 @@ function Seq2Seq:train(encoderInput,decoderInput,decoderTarget)
   local timeStep = decoderTarget:size(2)
   -- print("decoderTarget : ")
   -- print(decoderTarget)
-  decoderTarget = nn.SplitTable(2):forward(decoderTarget)
+  local decoderTarget = self.splitTable:forward(decoderTarget)
   -- Forward pass
   -- print("encoderInput : ")
   -- print(encoderInput)
@@ -130,21 +133,24 @@ function Seq2Seq:train(encoderInput,decoderInput,decoderTarget)
   -- print("decoderTarget:")
   -- print(decoderTarget)
   -- print(decoderTarget[4])
-  local Edecoder = 0
-  local gEdec = {}
-  for i = 1,timeStep do 
-    Edecoder = Edecoder + self.criterion:forward(decoderOutput[i],decoderTarget[i])
-    gEdec[i] = self.criterion:backward(decoderOutput[i],decoderTarget[i]):clone()
-  end
+  
+  -- local Edecoder = 0
+  -- local gEdec = {}
+  -- for i = 1,timeStep do 
+    -- Edecoder = Edecoder + self.criterion:forward(decoderOutput[i],decoderTarget[i])
+    -- gEdec[i] = self.criterion:backward(decoderOutput[i],decoderTarget[i]):clone()
+  -- end
   -- print(Edecoder)
 
 
-  -- local Edecoder = self.criterion:forward(decoderOutput, decoderTarget)
-  -- if Edecoder ~= Edecoder then -- Exist early on bad error
-    -- return Edecoder
-  -- end
+  local Edecoder = self.criterion:forward(decoderOutput, decoderTarget)
+  if Edecoder ~= Edecoder then -- Exist early on bad error
+    return Edecoder
+  end
+  self.encoder:zeroGradParameters()
+  self.decoder:zeroGradParameters()
   -- -- Backward pass
-  -- local gEdec = self.criterion:backward(decoderOutput, decoderTarget)
+  local gEdec = self.criterion:backward(decoderOutput, decoderTarget)
 
   -- print("gEdec :")
   -- print(gEdec)
@@ -158,11 +164,10 @@ function Seq2Seq:train(encoderInput,decoderInput,decoderTarget)
   self.decoder:updateGradParameters(self.momentum)
   self.decoder:updateParameters(self.learningRate)
   self.encoder:updateParameters(self.learningRate)
-  self.encoder:zeroGradParameters()
-  self.decoder:zeroGradParameters()
 
   self.decoder:forget()
   self.encoder:forget()
+  self.splitTable:forget()
 
   return Edecoder
 end

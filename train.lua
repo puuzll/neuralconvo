@@ -24,18 +24,6 @@ function cleanupModel(node)
   if node.finput ~= nil then
     node.finput = zeroDataSize(node.finput)
   end
-  if node._gradOutputs ~= nil then
-    node._gradOutputs = {}
-  end
-  if node.outputs ~= nil then
-    node.outputs = {}
-  end
-  if node.sharedClones ~= nil then
-    node.sharedClones = {}
-  end
-  if node.step ~= nil then
-    node.step = 1
-  end
   -- Recurse on nodes with 'modules'
   if (node.modules ~= nil) then
     if (type(node.modules) == 'table') then
@@ -45,8 +33,8 @@ function cleanupModel(node)
       end
     end
   end
-  node:reset()
-  collectgarbage()
+  -- node:reset()
+  -- collectgarbage()
 end
 
 cmd = torch.CmdLine()
@@ -89,6 +77,9 @@ dataset = neuralconvo.NetEaseData({
   text = "/sentence_sorted_numeric_selected.txt"
 })
 
+print("start fetching ....")
+dataset:fetch()
+print("end fetching ....")
 print("\nDataset stats:")
 print("  Vocabulary size: " .. dataset.wordsCount)
 print("         Examples: " .. dataset.examplesCount)
@@ -122,13 +113,11 @@ end
 -- local testDecoder = torch.ones(options.batchSize,maxTimeStep):cuda()
 -- local testTarget = torch.ones(options.batchSize,maxTimeStep):cuda()
 -- local err = model:train(testInput,testDecoder,testTarget)
-print("start fetching ....")
-dataset:fetch()
-print("end fetching ....")
 for epoch = 1, options.maxEpoch do
   print("\n-- Epoch " .. epoch .. " / " .. options.maxEpoch)
   print("")
 
+  collectgarbage()
   local errors = {}
   local timer = torch.Timer()
 
@@ -136,7 +125,7 @@ for epoch = 1, options.maxEpoch do
   local maxInputLen = 0
   local maxTargetLen = 0
   for examples in dataset:batches(options.batchSize) do
-
+    -- collectgarbage()
     local encoderInput , decoderInput , decoderTarget= unpack(examples)
 
     if options.cuda then
@@ -171,6 +160,7 @@ for epoch = 1, options.maxEpoch do
     end
   end
 
+  print(collectgarbage("count"))
   timer:stop()
   errors = torch.Tensor(errors)
 
@@ -193,8 +183,9 @@ for epoch = 1, options.maxEpoch do
     -- local saveModel = model
     -- local encoder = model.encoder:clone()
     -- local decoder = model.decoder:clone()
-    -- cleanupModel(encoder)
-    -- cleanupModel(decoder)
+    -- cleanupModel(model.encoder)
+    -- cleanupModel(model.decoder)
+    -- cleanupModel(model.criterion)
     -- saveModel.encoder = encoder
     -- saveModel.decoder = decoder
     -- print(model.encoder.modules)
@@ -205,7 +196,6 @@ for epoch = 1, options.maxEpoch do
     minMeanError = errors:mean()
   end
 
-  collectgarbage()
   model.learningRate = model.learningRate + decayFactor
   model.learningRate = math.max(options.minLR, model.learningRate)
 end
